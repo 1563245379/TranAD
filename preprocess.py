@@ -7,7 +7,7 @@ import json
 from src.folderconstants import *
 from shutil import copyfile
 
-datasets = ['synthetic', 'SMD', 'SWaT', 'SMAP', 'MSL', 'WADI', 'MSDS', 'UCR', 'MBA', 'NAB']
+datasets = ['synthetic', 'SMD', 'SWaT', 'SMAP', 'MSL', 'WADI', 'MSDS', 'UCR', 'MBA', 'NAB', 'energy']
 
 wadi_drop = ['2_LS_001_AL', '2_LS_002_AL','2_P_001_STATUS','2_P_002_STATUS']
 
@@ -196,6 +196,60 @@ def load_data(dataset):
 			labels[ls + i, :] = 1
 		for file in ['train', 'test', 'labels']:
 			np.save(os.path.join(folder, f'{file}.npy'), eval(file))
+	elif dataset == 'energy':
+		dataset_folder = 'data/energy-anomaly-detection'
+		df = pd.read_csv(os.path.join(dataset_folder, 'train_features.csv'))
+		df['timestamp'] = pd.to_datetime(df['timestamp'])
+		feature_cols = ['meter_reading', 'air_temperature', 'cloud_coverage',
+			'dew_temperature', 'precip_depth_1_hr', 'sea_level_pressure',
+			'wind_direction', 'wind_speed']
+		buildings = sorted(df['building_id'].unique())
+		default_bid = None
+		processed = 0
+		for bid in buildings:
+			bdf = df[df['building_id'] == bid].sort_values('timestamp').reset_index(drop=True)
+			values = bdf[feature_cols].values.astype(np.float64)
+			labels_raw = bdf['anomaly'].values.astype(np.float64)
+			valid_ratio = np.sum(~np.isnan(values[:, 0])) / len(values)
+			if valid_ratio < 0.5:
+				print(f'Building {bid}: skipped ({valid_ratio*100:.1f}% valid readings)')
+				continue
+			# Replace missing value indicators with NaN
+			cc_idx = feature_cols.index('cloud_coverage')
+			wd_idx = feature_cols.index('wind_direction')
+			pr_idx = feature_cols.index('precip_depth_1_hr')
+			ws_idx = feature_cols.index('wind_speed')
+			values[values[:, cc_idx] == 255, cc_idx] = np.nan
+			values[values[:, wd_idx] == 65535, wd_idx] = np.nan
+			values[values[:, pr_idx] < 0, pr_idx] = np.nan
+			values[values[:, ws_idx] < 0, ws_idx] = np.nan
+			# Interpolate NaN values column-wise
+			for col_idx in range(values.shape[1]):
+				s = pd.Series(values[:, col_idx])
+				s = s.interpolate().bfill().ffill().fillna(0)
+				values[:, col_idx] = s.values
+			# Time-based 70/30 split
+			split = int(len(values) * 0.7)
+			train_vals, test_vals = values[:split], values[split:]
+			train, min_a, max_a = normalize3(train_vals)
+			test, _, _ = normalize3(test_vals, min_a, max_a)
+			# Labels: anomaly expanded to all features
+			labels = np.zeros_like(test)
+			anomaly_mask = labels_raw[split:] == 1
+			labels[anomaly_mask, :] = 1
+			print(f'Building {bid}: train={train.shape}, test={test.shape}, anomalies={int(anomaly_mask.sum())}')
+			for file in ['train', 'test', 'labels']:
+				np.save(os.path.join(folder, f'{bid}_{file}.npy'), eval(file).astype('float64'))
+			processed += 1
+			if default_bid is None:
+				default_bid = bid
+		if default_bid is not None:
+			print(f'Processed {processed}/{len(buildings)} buildings, default: {default_bid}')
+			for file in ['train', 'test', 'labels']:
+				copyfile(os.path.join(folder, f'{default_bid}_{file}.npy'),
+					os.path.join(folder, f'{file}.npy'))
+		else:
+			print('No valid buildings found')
 	else:
 		raise Exception(f'Not Implemented. Check one of {datasets}')
 
