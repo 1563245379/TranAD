@@ -5,6 +5,8 @@ import os, torch
 import numpy as np
 
 plt.style.use(['science', 'ieee'])
+plt.rcParams['font.family'] = 'serif'
+plt.rcParams['font.serif'] = ['DejaVu Serif']
 plt.rcParams["text.usetex"] = False
 plt.rcParams['figure.figsize'] = 6, 2
 
