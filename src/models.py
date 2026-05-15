@@ -3,8 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import pickle
-import dgl
-from dgl.nn import GATConv
 from torch.nn import TransformerEncoder
 from torch.nn import TransformerDecoder
 from src.dlutils import *
@@ -258,6 +256,8 @@ class CAE_M(nn.Module):
 class MTAD_GAT(nn.Module):
 	def __init__(self, feats):
 		super(MTAD_GAT, self).__init__()
+		import dgl
+		from dgl.nn import GATConv
 		self.name = 'MTAD_GAT'
 		self.lr = 0.0001
 		self.n_feats = feats
@@ -286,6 +286,8 @@ class MTAD_GAT(nn.Module):
 class GDN(nn.Module):
 	def __init__(self, feats):
 		super(GDN, self).__init__()
+		import dgl
+		from dgl.nn import GATConv
 		self.name = 'GDN'
 		self.lr = 0.0001
 		self.n_feats = feats

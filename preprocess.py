@@ -199,30 +199,27 @@ def load_data(dataset):
 		dataset_folder = 'data/energy-anomaly-detection'
 		df = pd.read_csv(os.path.join(dataset_folder, 'train_features.csv'))
 		df['timestamp'] = pd.to_datetime(df['timestamp'])
-		feature_cols = ['air_temperature', 'cloud_coverage',
-			'dew_temperature', 'sea_level_pressure',
-			'wind_direction', 'wind_speed']
 		buildings = sorted(df['building_id'].unique())
 		processed = 0
 		all_trains, all_tests, all_labels = [], [], []
 		for bid in buildings:
 			bdf = df[df['building_id'] == bid].sort_values('timestamp').reset_index(drop=True)
+			feature_cols = ['meter_reading', 'air_temperature', 'dew_temperature',
+				'sea_level_pressure', 'wind_speed',
+				'air_temperature_mean_lag7', 'air_temperature_max_lag7',
+				'air_temperature_min_lag7', 'air_temperature_std_lag7',
+				'air_temperature_mean_lag73', 'air_temperature_max_lag73',
+				'air_temperature_min_lag73', 'air_temperature_std_lag73']
 			values = bdf[feature_cols].values.astype(np.float64)
+			for col_idx in range(values.shape[1]):
+				s = pd.Series(values[:, col_idx])
+				s = s.interpolate().bfill().ffill()
+				values[:, col_idx] = s.values
 			labels_raw = bdf['anomaly'].values.astype(np.float64)
 			valid_ratio = np.sum(~np.isnan(values[:, 0])) / len(values)
 			if valid_ratio < 0.5:
 				print(f'Building {bid}: skipped ({valid_ratio*100:.1f}% valid readings)')
 				continue
-			cc_idx = feature_cols.index('cloud_coverage')
-			wd_idx = feature_cols.index('wind_direction')
-			ws_idx = feature_cols.index('wind_speed')
-			values[values[:, cc_idx] == 255, cc_idx] = np.nan
-			values[values[:, wd_idx] == 65535, wd_idx] = np.nan
-			values[values[:, ws_idx] < 0, ws_idx] = np.nan
-			for col_idx in range(values.shape[1]):
-				s = pd.Series(values[:, col_idx])
-				s = s.interpolate().bfill().ffill().fillna(0)
-				values[:, col_idx] = s.values
 			split = int(len(values) * 0.7)
 			train_vals, test_vals = values[:split], values[split:]
 			train, min_a, max_a = normalize3(train_vals)

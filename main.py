@@ -348,21 +348,26 @@ if __name__ == '__main__':
 		if 'TranAD' in model.name: testO = torch.roll(testO, 1, 0) 
 		plotter(f'{args.model}_{args.dataset}', testO, y_pred, loss, labels)
 
-	### Scores
-	df = pd.DataFrame()
+	### Scores - Per-feature and union evaluation
 	lossT, _ = backprop(0, model, trainD, trainO, optimizer, scheduler, training=False)
-	for i in range(loss.shape[1]):
+	preds = []
+	df = pd.DataFrame()
+	feats = loss.shape[1]
+	for i in range(feats):
 		lt, l, ls = lossT[:, i], loss[:, i], labels[:, i]
-		result, pred = pot_eval(lt, l, ls); preds.append(pred)
-		df = pd.concat([df, pd.DataFrame([result])], ignore_index=True)
-	# preds = np.concatenate([i.reshape(-1, 1) + 0 for i in preds], axis=1)
-	# pd.DataFrame(preds, columns=[str(i) for i in range(10)]).to_csv('labels.csv')
+		result_feat, pred = pot_eval(lt, l, ls)
+		preds.append(pred)
+		df = pd.concat([df, pd.DataFrame([result_feat])], ignore_index=True)
+	preds = np.stack(preds, axis=1)  # (time_steps, feats)
+	# Union: if any feature has anomaly label, the point is anomalous
+	labels_union = (np.sum(labels, axis=1) >= 1) + 0
 	lossTfinal, lossFinal = np.mean(lossT, axis=1), np.mean(loss, axis=1)
-	labelsFinal = (np.sum(labels, axis=1) >= 1) + 0
-	result, _ = pot_eval(lossTfinal, lossFinal, labelsFinal)
-	result.update(hit_att(loss, labels))
-	result.update(ndcg(loss, labels))
+	result = pot_eval(lossTfinal, lossFinal, labels_union)[0]
+	result.update(hit_att_union(preds, labels))
+	result.update(ndcg_union(preds, labels))
+	print('=== Per-feature results ===')
 	print(df)
+	print('=== Union results ===')
 	pprint(result)
 	# pprint(getresults2(df, result))
 	# beep(4)
