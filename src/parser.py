@@ -28,4 +28,10 @@ parser.add_argument('--file',
 					required=False,
 					default=None,
 					help="specific file/building id for datasets with multiple files (e.g., SMAP, energy)")
+parser.add_argument('--batch_size',
+				metavar='-bs',
+				type=int,
+				required=False,
+				default=128,
+				help="batch size for training and inference (default: 128)")
 args = parser.parse_args()

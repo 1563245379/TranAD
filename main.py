@@ -85,20 +85,23 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 	dataO = dataO.to(device) if isinstance(dataO, torch.Tensor) else torch.DoubleTensor(dataO).to(device)
 	l = nn.MSELoss(reduction = 'mean' if training else 'none')
 	feats = dataO.shape[1]
+	bs = args.batch_size
 	if 'DAGMM' in model.name:
 		l = nn.MSELoss(reduction = 'none')
 		compute = ComputeLoss(model, 0.1, 0.005, device, model.n_gmm)
 		n = epoch + 1; w_size = model.n_window
 		l1s = []; l2s = []
 		if training:
-			for d in data:
+			optimizer.zero_grad()
+			for i, d in enumerate(data):
 				_, x_hat, z, gamma = model(d)
 				l1, l2 = l(x_hat, d), l(gamma, d)
 				l1s.append(torch.mean(l1).item()); l2s.append(torch.mean(l2).item())
-				loss = torch.mean(l1) + torch.mean(l2)
-				optimizer.zero_grad()
+				loss = (torch.mean(l1) + torch.mean(l2)) / bs
 				loss.backward()
-				optimizer.step()
+				if (i + 1) % bs == 0 or (i + 1) == len(data):
+					optimizer.step()
+					optimizer.zero_grad()
 			scheduler.step()
 			tqdm.write(f'Epoch {epoch},\tL1 = {np.mean(l1s)},\tL2 = {np.mean(l2s)}')
 			return np.mean(l1s)+np.mean(l2s), optimizer.param_groups[0]['lr']
@@ -117,15 +120,17 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 		n = epoch + 1; w_size = model.n_window
 		l1s = []; res = []
 		if training:
-			for d in data:
+			optimizer.zero_grad()
+			for i, d in enumerate(data):
 				ae, ats = model(d)
 				# res.append(torch.mean(ats, axis=0).view(-1))
 				l1 = l(ae, d)
 				l1s.append(torch.mean(l1).item())
-				loss = torch.mean(l1)
-				optimizer.zero_grad()
+				loss = torch.mean(l1) / bs
 				loss.backward()
-				optimizer.step()
+				if (i + 1) % bs == 0 or (i + 1) == len(data):
+					optimizer.step()
+					optimizer.zero_grad()
 			# res = torch.stack(res); np.save('ascores.npy', res.detach().cpu().numpy())
 			scheduler.step()
 			tqdm.write(f'Epoch {epoch},\tL1 = {np.mean(l1s)}')
@@ -143,18 +148,20 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 	elif 'OmniAnomaly' in model.name:
 		if training:
 			mses, klds = [], []
+			optimizer.zero_grad()
 			for i, d in enumerate(data):
 				y_pred, mu, logvar, hidden = model(d, hidden if i else None)
 				MSE = l(y_pred, d)
 				KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=0)
-				loss = MSE + model.beta * KLD
+				loss = (MSE + model.beta * KLD) / bs
 				mses.append(torch.mean(MSE).item()); klds.append(model.beta * torch.mean(KLD).item())
-				optimizer.zero_grad()
 				loss.backward()
-				optimizer.step()
+				if (i + 1) % bs == 0 or (i + 1) == len(data):
+					optimizer.step()
+					optimizer.zero_grad()
 			tqdm.write(f'Epoch {epoch},\tMSE = {np.mean(mses)},\tKLD = {np.mean(klds)}')
 			scheduler.step()
-			return loss.item(), optimizer.param_groups[0]['lr']
+			return np.mean(mses)+np.mean(klds), optimizer.param_groups[0]['lr']
 		else:
 			y_preds = []
 			with torch.no_grad():
@@ -169,15 +176,17 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 		n = epoch + 1; w_size = model.n_window
 		l1s, l2s = [], []
 		if training:
-			for d in data:
+			optimizer.zero_grad()
+			for i, d in enumerate(data):
 				ae1s, ae2s, ae2ae1s = model(d)
 				l1 = (1 / n) * l(ae1s, d) + (1 - 1/n) * l(ae2ae1s, d)
 				l2 = (1 / n) * l(ae2s, d) - (1 - 1/n) * l(ae2ae1s, d)
 				l1s.append(torch.mean(l1).item()); l2s.append(torch.mean(l2).item())
-				loss = torch.mean(l1 + l2)
-				optimizer.zero_grad()
+				loss = torch.mean(l1 + l2) / bs
 				loss.backward()
-				optimizer.step()
+				if (i + 1) % bs == 0 or (i + 1) == len(data):
+					optimizer.step()
+					optimizer.zero_grad()
 			scheduler.step()
 			tqdm.write(f'Epoch {epoch},\tL1 = {np.mean(l1s)},\tL2 = {np.mean(l2s)}')
 			return np.mean(l1s)+np.mean(l2s), optimizer.param_groups[0]['lr']
@@ -196,16 +205,19 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 		n = epoch + 1; w_size = model.n_window
 		l1s = []
 		if training:
+			optimizer.zero_grad()
 			for i, d in enumerate(data):
 				if 'MTAD_GAT' in model.name: 
 					x, h = model(d, h if i else None)
 				else:
 					x = model(d)
-				loss = torch.mean(l(x, d))
-				l1s.append(torch.mean(loss).item())
-				optimizer.zero_grad()
+				raw_loss = torch.mean(l(x, d))
+				l1s.append(raw_loss.item())
+				loss = raw_loss / bs
 				loss.backward()
-				optimizer.step()
+				if (i + 1) % bs == 0 or (i + 1) == len(data):
+					optimizer.step()
+					optimizer.zero_grad()
 			tqdm.write(f'Epoch {epoch},\tMSE = {np.mean(l1s)}')
 			return np.mean(l1s), optimizer.param_groups[0]['lr']
 		else:
@@ -231,23 +243,28 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 		n = epoch + 1; w_size = model.n_window
 		mses, gls, dls = [], [], []
 		if training:
-			for d in data:
+			optimizer.zero_grad()
+			for i, d in enumerate(data):
 				# training discriminator
 				model.discriminator.zero_grad()
 				_, real, fake = model(d)
-				dl = bcel(real, real_label) + bcel(fake, fake_label)
+				dl = (bcel(real, real_label) + bcel(fake, fake_label)) / bs
 				dl.backward()
 				model.generator.zero_grad()
-				optimizer.step()
+				if (i + 1) % bs == 0 or (i + 1) == len(data):
+					optimizer.step()
+					optimizer.zero_grad()
 				# training generator
 				z, _, fake = model(d)
 				mse = msel(z, d) 
 				gl = bcel(fake, real_label)
-				tl = gl + mse
+				tl = (gl + mse) / bs
 				tl.backward()
 				model.discriminator.zero_grad()
-				optimizer.step()
-				mses.append(mse.item()); gls.append(gl.item()); dls.append(dl.item())
+				if (i + 1) % bs == 0 or (i + 1) == len(data):
+					optimizer.step()
+					optimizer.zero_grad()
+				mses.append(mse.item()); gls.append(gl.item()); dls.append(dl.item() * bs)
 				# tqdm.write(f'Epoch {epoch},\tMSE = {mse},\tG = {gl},\tD = {dl}')
 			tqdm.write(f'Epoch {epoch},\tMSE = {np.mean(mses)},\tG = {np.mean(gls)},\tD = {np.mean(dls)}')
 			return np.mean(gls)+np.mean(dls), optimizer.param_groups[0]['lr']
@@ -265,8 +282,8 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 	elif 'TranAD' in model.name:
 		l = nn.MSELoss(reduction = 'none')
 		dataset = TensorDataset(data, data)
-		bs = model.batch if training else min(model.batch, len(data))
-		dataloader = DataLoader(dataset, batch_size = bs)
+		tran_bs = bs if training else min(bs, len(data))
+		dataloader = DataLoader(dataset, batch_size = tran_bs)
 		n = epoch + 1; w_size = model.n_window
 		l1s, l2s = [], []
 		if training:
@@ -316,6 +333,7 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 			return loss.detach().cpu().numpy(), y_pred.detach().cpu().numpy()
 
 if __name__ == '__main__':
+	print(f'Batch size: {args.batch_size}')
 	train_loader, test_loader, labels = load_dataset(args.dataset)
 	if args.model in ['MERLIN']:
 		eval(f'run_{args.model.lower()}(test_loader, labels, args.dataset)')

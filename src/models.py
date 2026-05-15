@@ -358,7 +358,6 @@ class TranAD_Basic(nn.Module):
 		super(TranAD_Basic, self).__init__()
 		self.name = 'TranAD_Basic'
 		self.lr = lr
-		self.batch = 128
 		self.n_feats = feats
 		self.n_window = 10
 		self.n = self.n_feats * self.n_window
@@ -383,7 +382,6 @@ class TranAD_Transformer(nn.Module):
 		super(TranAD_Transformer, self).__init__()
 		self.name = 'TranAD_Transformer'
 		self.lr = lr
-		self.batch = 128
 		self.n_feats = feats
 		self.n_hidden = 8
 		self.n_window = 10
@@ -424,7 +422,6 @@ class TranAD_Adversarial(nn.Module):
 		super(TranAD_Adversarial, self).__init__()
 		self.name = 'TranAD_Adversarial'
 		self.lr = lr
-		self.batch = 128
 		self.n_feats = feats
 		self.n_window = 10
 		self.n = self.n_feats * self.n_window
@@ -460,7 +457,6 @@ class TranAD_SelfConditioning(nn.Module):
 		super(TranAD_SelfConditioning, self).__init__()
 		self.name = 'TranAD_SelfConditioning'
 		self.lr = lr
-		self.batch = 128
 		self.n_feats = feats
 		self.n_window = 10
 		self.n = self.n_feats * self.n_window
@@ -495,7 +491,6 @@ class TranAD(nn.Module):
 		super(TranAD, self).__init__()
 		self.name = 'TranAD'
 		self.lr = lr
-		self.batch = 128
 		self.n_feats = feats
 		self.n_window = 10
 		self.n = self.n_feats * self.n_window
