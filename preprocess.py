@@ -203,6 +203,7 @@ def load_data(dataset):
 		processed = 0
 		all_trains, all_tests, all_labels = [], [], []
 		for bid in buildings:
+			bid = int(bid)
 			bdf = df[df['building_id'] == bid].sort_values('timestamp').reset_index(drop=True)
 			feature_cols = ['meter_reading', 'air_temperature', 'dew_temperature',
 				'sea_level_pressure', 'wind_speed',
@@ -227,7 +228,8 @@ def load_data(dataset):
 			labels_raw = labels_raw[split:]
 			labels = np.zeros_like(test)
 			anomaly_mask = labels_raw == 1
-			labels[anomaly_mask, :] = 1
+			# Energy anomaly labels refer to meter_reading only; weather/lag features are context.
+			labels[anomaly_mask, 0] = 1
 			print(f'Building {bid}: train={train.shape}, test={test.shape}, anomalies={int(anomaly_mask.sum())}')
 			for file in ['train', 'test', 'labels']:
 				np.save(os.path.join(folder, f'{bid}_{file}.npy'), eval(file).astype('float64'))

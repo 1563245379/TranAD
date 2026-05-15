@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(superpowers:systematic-debugging)",
+      "Bash(python -c \"import numpy as np; t=np.load\\('processed/energy/train.npy'\\); l=np.load\\('processed/energy/test.npy'\\); lab=np.load\\('processed/energy/labels.npy'\\); print\\('train', t.shape, 'test', l.shape, 'labels', lab.shape, 'anomaly_ratio', lab[:,0].mean\\(\\), 'feat0_min/max', t[:,0].min\\(\\), t[:,0].max\\(\\)\\)\")",
+      "Bash(python *)",
+      "WebFetch(domain:arxiv.org)",
+      "WebFetch(domain:ar5iv.labs.arxiv.org)"
+    ]
+  }
+}

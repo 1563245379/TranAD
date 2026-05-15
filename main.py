@@ -371,18 +371,25 @@ if __name__ == '__main__':
 	preds = []
 	df = pd.DataFrame()
 	feats = loss.shape[1]
-	for i in range(feats):
+	eval_features = [0] if args.dataset == 'energy' else list(range(feats))
+	for i in eval_features:
 		lt, l, ls = lossT[:, i], loss[:, i], labels[:, i]
 		result_feat, pred = pot_eval(lt, l, ls)
 		preds.append(pred)
 		df = pd.concat([df, pd.DataFrame([result_feat])], ignore_index=True)
-	preds = np.stack(preds, axis=1)  # (time_steps, feats)
+	preds = np.stack(preds, axis=1)  # (time_steps, evaluated_features)
 	# Union: if any feature has anomaly label, the point is anomalous
-	labels_union = (np.sum(labels, axis=1) >= 1) + 0
-	lossTfinal, lossFinal = np.mean(lossT, axis=1), np.mean(loss, axis=1)
+	if args.dataset == 'energy':
+		labels_eval = labels[:, eval_features]
+		labels_union = labels[:, 0]
+		lossTfinal, lossFinal = lossT[:, 0], loss[:, 0]
+	else:
+		labels_eval = labels
+		labels_union = (np.sum(labels, axis=1) >= 1) + 0
+		lossTfinal, lossFinal = np.mean(lossT, axis=1), np.mean(loss, axis=1)
 	result = pot_eval(lossTfinal, lossFinal, labels_union)[0]
-	result.update(hit_att_union(preds, labels))
-	result.update(ndcg_union(preds, labels))
+	result.update(hit_att_union(preds, labels_eval))
+	result.update(ndcg_union(preds, labels_eval))
 	print('=== Per-feature results ===')
 	print(df)
 	print('=== Union results ===')
