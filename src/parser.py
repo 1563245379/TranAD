@@ -19,7 +19,13 @@ parser.add_argument('--test',
 parser.add_argument('--retrain', 
 					action='store_true', 
 					help="retrain the model")
-parser.add_argument('--less', 
-					action='store_true', 
+parser.add_argument('--less',
+					action='store_true',
 					help="train using less data")
+parser.add_argument('--file',
+					metavar='-f',
+					type=str,
+					required=False,
+					default=None,
+					help="specific file/building id for datasets with multiple files (e.g., SMAP, energy)")
 args = parser.parse_args()

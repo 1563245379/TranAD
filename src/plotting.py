@@ -4,6 +4,7 @@ import statistics
 import os, torch
 import numpy as np
 
+import scienceplots
 plt.style.use(['science', 'ieee'])
 plt.rcParams['font.family'] = 'serif'
 plt.rcParams['font.serif'] = ['DejaVu Serif']

@@ -13,6 +13,9 @@ from torch.utils.data import Dataset, DataLoader, TensorDataset
 import torch.nn as nn
 from time import time
 from pprint import pprint
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'Using device: {device}')
 # from beepy import beep
 
 def convert_to_windows(data, model):
@@ -28,13 +31,16 @@ def load_dataset(dataset):
 	if not os.path.exists(folder):
 		raise Exception('Processed Data not found.')
 	loader = []
-	for file in ['train', 'test', 'labels']:
-		if dataset == 'SMD': file = 'machine-1-1_' + file
-		if dataset == 'SMAP': file = 'P-1_' + file
-		if dataset == 'MSL': file = 'C-1_' + file
-		if dataset == 'UCR': file = '136_' + file
-		if dataset == 'NAB': file = 'ec2_request_latency_system_failure_' + file
-		loader.append(np.load(os.path.join(folder, f'{file}.npy')))
+	for sf in ['train', 'test', 'labels']:
+		if dataset == 'energy':
+			file = (args.file + '_') if args.file else ''
+		elif dataset == 'SMD': file = 'machine-1-1_'
+		elif dataset == 'SMAP': file = (args.file if args.file else 'P-1') + '_'
+		elif dataset == 'MSL': file = (args.file if args.file else 'C-1') + '_'
+		elif dataset == 'UCR': file = '136_'
+		elif dataset == 'NAB': file = 'ec2_request_latency_system_failure_'
+		else: file = ''
+		loader.append(np.load(os.path.join(folder, f'{file}{sf}.npy')))
 	# loader = [i[:, debug:debug+1] for i in loader]
 	if args.less: loader[0] = cut_array(0.2, loader[0])
 	train_loader = DataLoader(loader[0], batch_size=loader[0].shape[0])
@@ -56,7 +62,7 @@ def save_model(model, optimizer, scheduler, epoch, accuracy_list):
 def load_model(modelname, dims):
 	import src.models
 	model_class = getattr(src.models, modelname)
-	model = model_class(dims).double()
+	model = model_class(dims).double().to(device)
 	optimizer = torch.optim.AdamW(model.parameters() , lr=model.lr, weight_decay=1e-5)
 	scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 5, 0.9)
 	fname = f'checkpoints/{args.model}_{args.dataset}/model.ckpt'
@@ -74,11 +80,14 @@ def load_model(modelname, dims):
 	return model, optimizer, scheduler, epoch, accuracy_list
 
 def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
+	model.to(device)
+	data = data.to(device) if isinstance(data, torch.Tensor) else torch.DoubleTensor(data).to(device)
+	dataO = dataO.to(device) if isinstance(dataO, torch.Tensor) else torch.DoubleTensor(dataO).to(device)
 	l = nn.MSELoss(reduction = 'mean' if training else 'none')
 	feats = dataO.shape[1]
 	if 'DAGMM' in model.name:
 		l = nn.MSELoss(reduction = 'none')
-		compute = ComputeLoss(model, 0.1, 0.005, 'cpu', model.n_gmm)
+		compute = ComputeLoss(model, 0.1, 0.005, device, model.n_gmm)
 		n = epoch + 1; w_size = model.n_window
 		l1s = []; l2s = []
 		if training:
@@ -95,13 +104,14 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 			return np.mean(l1s)+np.mean(l2s), optimizer.param_groups[0]['lr']
 		else:
 			ae1s = []
-			for d in data: 
-				_, x_hat, _, _ = model(d)
-				ae1s.append(x_hat)
+			with torch.no_grad():
+				for d in data:
+					_, x_hat, _, _ = model(d)
+					ae1s.append(x_hat)
 			ae1s = torch.stack(ae1s)
 			y_pred = ae1s[:, data.shape[1]-feats:data.shape[1]].view(-1, feats)
 			loss = l(ae1s, data)[:, data.shape[1]-feats:data.shape[1]].view(-1, feats)
-			return loss.detach().numpy(), y_pred.detach().numpy()
+			return loss.detach().cpu().numpy(), y_pred.detach().cpu().numpy()
 	if 'Attention' in model.name:
 		l = nn.MSELoss(reduction = 'none')
 		n = epoch + 1; w_size = model.n_window
@@ -116,19 +126,20 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 				optimizer.zero_grad()
 				loss.backward()
 				optimizer.step()
-			# res = torch.stack(res); np.save('ascores.npy', res.detach().numpy())
+			# res = torch.stack(res); np.save('ascores.npy', res.detach().cpu().numpy())
 			scheduler.step()
 			tqdm.write(f'Epoch {epoch},\tL1 = {np.mean(l1s)}')
 			return np.mean(l1s), optimizer.param_groups[0]['lr']
 		else:
 			ae1s, y_pred = [], []
-			for d in data: 
-				ae1 = model(d)
-				y_pred.append(ae1[-1])
-				ae1s.append(ae1)
+			with torch.no_grad():
+				for d in data:
+					ae1 = model(d)
+					y_pred.append(ae1[-1])
+					ae1s.append(ae1)
 			ae1s, y_pred = torch.stack(ae1s), torch.stack(y_pred)
 			loss = torch.mean(l(ae1s, data), axis=1)
-			return loss.detach().numpy(), y_pred.detach().numpy()
+			return loss.detach().cpu().numpy(), y_pred.detach().cpu().numpy()
 	elif 'OmniAnomaly' in model.name:
 		if training:
 			mses, klds = [], []
@@ -146,12 +157,13 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 			return loss.item(), optimizer.param_groups[0]['lr']
 		else:
 			y_preds = []
-			for i, d in enumerate(data):
-				y_pred, _, _, hidden = model(d, hidden if i else None)
-				y_preds.append(y_pred)
+			with torch.no_grad():
+				for i, d in enumerate(data):
+					y_pred, _, _, hidden = model(d, hidden if i else None)
+					y_preds.append(y_pred)
 			y_pred = torch.stack(y_preds)
 			MSE = l(y_pred, data)
-			return MSE.detach().numpy(), y_pred.detach().numpy()
+			return MSE.detach().cpu().numpy(), y_pred.detach().cpu().numpy()
 	elif 'USAD' in model.name:
 		l = nn.MSELoss(reduction = 'none')
 		n = epoch + 1; w_size = model.n_window
@@ -178,7 +190,7 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 			y_pred = ae1s[:, data.shape[1]-feats:data.shape[1]].view(-1, feats)
 			loss = 0.1 * l(ae1s, data) + 0.9 * l(ae2ae1s, data)
 			loss = loss[:, data.shape[1]-feats:data.shape[1]].view(-1, feats)
-			return loss.detach().numpy(), y_pred.detach().numpy()
+			return loss.detach().cpu().numpy(), y_pred.detach().cpu().numpy()
 	elif model.name in ['GDN', 'MTAD_GAT', 'MSCRED', 'CAE_M']:
 		l = nn.MSELoss(reduction = 'none')
 		n = epoch + 1; w_size = model.n_window
@@ -198,17 +210,18 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 			return np.mean(l1s), optimizer.param_groups[0]['lr']
 		else:
 			xs = []
-			for d in data: 
-				if 'MTAD_GAT' in model.name: 
-					x, h = model(d, None)
-				else:
-					x = model(d)
-				xs.append(x)
+			with torch.no_grad():
+				for d in data:
+					if 'MTAD_GAT' in model.name:
+						x, h = model(d, None)
+					else:
+						x = model(d)
+					xs.append(x)
 			xs = torch.stack(xs)
 			y_pred = xs[:, data.shape[1]-feats:data.shape[1]].view(-1, feats)
 			loss = l(xs, data)
 			loss = loss[:, data.shape[1]-feats:data.shape[1]].view(-1, feats)
-			return loss.detach().numpy(), y_pred.detach().numpy()
+			return loss.detach().cpu().numpy(), y_pred.detach().cpu().numpy()
 	elif 'GAN' in model.name:
 		l = nn.MSELoss(reduction = 'none')
 		bcel = nn.BCELoss(reduction = 'mean')
@@ -240,18 +253,19 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 			return np.mean(gls)+np.mean(dls), optimizer.param_groups[0]['lr']
 		else:
 			outputs = []
-			for d in data: 
-				z, _, _ = model(d)
-				outputs.append(z)
+			with torch.no_grad():
+				for d in data:
+					z, _, _ = model(d)
+					outputs.append(z)
 			outputs = torch.stack(outputs)
 			y_pred = outputs[:, data.shape[1]-feats:data.shape[1]].view(-1, feats)
 			loss = l(outputs, data)
 			loss = loss[:, data.shape[1]-feats:data.shape[1]].view(-1, feats)
-			return loss.detach().numpy(), y_pred.detach().numpy()
+			return loss.detach().cpu().numpy(), y_pred.detach().cpu().numpy()
 	elif 'TranAD' in model.name:
 		l = nn.MSELoss(reduction = 'none')
-		data_x = torch.DoubleTensor(data); dataset = TensorDataset(data_x, data_x)
-		bs = model.batch if training else len(data)
+		dataset = TensorDataset(data, data)
+		bs = model.batch if training else min(model.batch, len(data))
 		dataloader = DataLoader(dataset, batch_size = bs)
 		n = epoch + 1; w_size = model.n_window
 		l1s, l2s = [], []
@@ -272,17 +286,23 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 			tqdm.write(f'Epoch {epoch},\tL1 = {np.mean(l1s)}')
 			return np.mean(l1s), optimizer.param_groups[0]['lr']
 		else:
-			for d, _ in dataloader:
-				window = d.permute(1, 0, 2)
-				elem = window[-1, :, :].view(1, bs, feats)
-				z = model(window, elem)
-				if isinstance(z, tuple): z = z[1]
-			loss = l(z, elem)[0]
-			return loss.detach().numpy(), z.detach().numpy()[0]
+			losses, preds = [], []
+			with torch.no_grad():
+				for d, _ in dataloader:
+					local_bs = d.shape[0]
+					window = d.permute(1, 0, 2)
+					elem = window[-1, :, :].view(1, local_bs, feats)
+					z = model(window, elem)
+					if isinstance(z, tuple): z = z[1]
+					losses.append(l(z, elem)[0])
+					preds.append(z[0])
+			loss = torch.cat(losses, dim=0)
+			y_pred = torch.cat(preds, dim=0)
+			return loss.detach().cpu().numpy(), y_pred.detach().cpu().numpy()
 	else:
-		y_pred = model(data)
-		loss = l(y_pred, data)
 		if training:
+			y_pred = model(data)
+			loss = l(y_pred, data)
 			tqdm.write(f'Epoch {epoch},\tMSE = {loss}')
 			optimizer.zero_grad()
 			loss.backward()
@@ -290,7 +310,10 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 			scheduler.step()
 			return loss.item(), optimizer.param_groups[0]['lr']
 		else:
-			return loss.detach().numpy(), y_pred.detach().numpy()
+			with torch.no_grad():
+				y_pred = model(data)
+			loss = l(y_pred, data)
+			return loss.detach().cpu().numpy(), y_pred.detach().cpu().numpy()
 
 if __name__ == '__main__':
 	train_loader, test_loader, labels = load_dataset(args.dataset)
@@ -307,7 +330,7 @@ if __name__ == '__main__':
 	### Training phase
 	if not args.test:
 		print(f'{color.HEADER}Training {args.model} on {args.dataset}{color.ENDC}')
-		num_epochs = 10; e = epoch + 1; start = time()
+		num_epochs = 5; e = epoch + 1; start = time()
 		for e in tqdm(list(range(epoch+1, epoch+num_epochs+1))):
 			lossT, lr = backprop(e, model, trainD, trainO, optimizer, scheduler)
 			accuracy_list.append((lossT, lr))
@@ -316,7 +339,6 @@ if __name__ == '__main__':
 		plot_accuracies(accuracy_list, f'{args.model}_{args.dataset}')
 
 	### Testing phase
-	torch.zero_grad = True
 	model.eval()
 	print(f'{color.HEADER}Testing {args.model} on {args.dataset}{color.ENDC}')
 	loss, y_pred = backprop(0, model, testD, testO, optimizer, scheduler, training=False)
