@@ -47,6 +47,7 @@ lm_d = {
 		'MSDS': [(0.91, 1), (0.9, 1.04)],
 		'MBA': [(0.87, 1), (0.93, 1.04)],
 		'energy': [(0.97, 1), (0.99, 1)],
+		'PowerSystemAnomalyDetection': [(0.97, 1), (0.99, 1)],
 	}
 lm = _get_override('lm_d', lm_d[args.dataset][1 if 'TranAD' in args.model else 0])
 
@@ -63,6 +64,7 @@ lr_d = {
 		'NAB': 0.009,
 		'MBA': 0.001,
 		'energy': 0.001,
+		'PowerSystemAnomalyDetection': 0.001,
 	}
 lr = _get_override('lr_d', lr_d[args.dataset])
 
@@ -79,6 +81,7 @@ percentiles = {
 		'NAB': (98, 2),
 		'MBA': (99, 2),
 		'energy': (97, 500),
+		'PowerSystemAnomalyDetection': (97, 500),
 	}
 percentile_merlin = percentiles[args.dataset][0]
 cvp = percentiles[args.dataset][1]

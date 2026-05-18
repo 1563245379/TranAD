@@ -371,7 +371,8 @@ if __name__ == '__main__':
 	preds = []
 	df = pd.DataFrame()
 	feats = loss.shape[1]
-	eval_features = [0] if args.dataset == 'energy' else list(range(feats))
+	single_col_datasets = {'energy', 'PowerSystemAnomalyDetection'}
+	eval_features = [0] if args.dataset in single_col_datasets else list(range(feats))
 	for i in eval_features:
 		lt, l, ls = lossT[:, i], loss[:, i], labels[:, i]
 		result_feat, pred = pot_eval(lt, l, ls)
@@ -379,7 +380,7 @@ if __name__ == '__main__':
 		df = pd.concat([df, pd.DataFrame([result_feat])], ignore_index=True)
 	preds = np.stack(preds, axis=1)  # (time_steps, evaluated_features)
 	# Union: if any feature has anomaly label, the point is anomalous
-	if args.dataset == 'energy':
+	if args.dataset in single_col_datasets:
 		labels_eval = labels[:, eval_features]
 		labels_union = labels[:, 0]
 		lossTfinal, lossFinal = lossT[:, 0], loss[:, 0]

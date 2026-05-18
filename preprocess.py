@@ -6,7 +6,7 @@ import pickle
 import json
 from src.folderconstants import *
 
-datasets = ['synthetic', 'SMD', 'SWaT', 'SMAP', 'MSL', 'WADI', 'MSDS', 'UCR', 'MBA', 'NAB', 'energy']
+datasets = ['synthetic', 'SMD', 'SWaT', 'SMAP', 'MSL', 'WADI', 'MSDS', 'UCR', 'MBA', 'NAB', 'energy', 'PowerSystemAnomalyDetection']
 
 wadi_drop = ['2_LS_001_AL', '2_LS_002_AL','2_P_001_STATUS','2_P_002_STATUS']
 
@@ -250,6 +250,30 @@ def load_data(dataset):
 				np.save(os.path.join(folder, f'{file}.npy'), data.astype('float64'))
 		else:
 			print('No valid buildings found')
+	elif dataset == 'PowerSystemAnomalyDetection':
+		dataset_folder = 'data/PowerSystemAnomalyDetection'
+		feature_cols = ['power_load', 'frequency', 'phase_angle']
+		anomaly_set = {'attack', 'error'}
+		df_train = pd.read_csv(os.path.join(dataset_folder, 'power_system_data_train.csv'))
+		df_test = pd.read_csv(os.path.join(dataset_folder, 'power_system_data_test.csv'))
+		train_vals = df_train[feature_cols].values.astype(np.float64)
+		test_vals = df_test[feature_cols].values.astype(np.float64)
+		for col_idx in range(train_vals.shape[1]):
+			s = pd.Series(train_vals[:, col_idx]).interpolate().bfill().ffill()
+			train_vals[:, col_idx] = np.asarray(s.values, dtype=np.float64)
+			s = pd.Series(test_vals[:, col_idx]).interpolate().bfill().ffill()
+			test_vals[:, col_idx] = np.asarray(s.values, dtype=np.float64)
+		train, min_a, max_a = normalize3(train_vals)
+		test, _, _ = normalize3(test_vals, min_a, max_a)
+		test_text = df_test['text_log'].astype(str).str.strip().str.lower()
+		anomaly_mask = np.asarray(test_text.isin(anomaly_set).values, dtype=bool)
+		# PowerSystem labels refer to power_load only; frequency/phase_angle are context features.
+		labels = np.zeros_like(test)
+		labels[anomaly_mask, 0] = 1
+		print(f'PowerSystemAnomalyDetection: train={train.shape}, test={test.shape}, '
+			f'anomalies={int(anomaly_mask.sum())}/{len(anomaly_mask)}')
+		for file in ['train', 'test', 'labels']:
+			np.save(os.path.join(folder, f'{file}.npy'), eval(file).astype('float64'))
 
 	else:
 		raise Exception(f'Not Implemented. Check one of {datasets}')

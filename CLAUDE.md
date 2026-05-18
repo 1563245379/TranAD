@@ -39,7 +39,9 @@ python3 main.py --model <model> --dataset <dataset> --retrain --less
 - 特殊模型：`MERLIN`（无需训练）
 
 ### 可用数据集
-`synthetic`, `SMD`, `SWaT`, `WADI`, `SMAP`, `MSL`, `MSDS`, `UCR`, `MBA`, `NAB`
+`synthetic`, `SMD`, `SWaT`, `WADI`, `SMAP`, `MSL`, `MSDS`, `UCR`, `MBA`, `NAB`, `energy`, `PowerSystemAnomalyDetection`
+
+注：`energy` 与 `PowerSystemAnomalyDetection` 为单列评估数据集（仅对第 0 列 `meter_reading` / `power_load` 标注异常并统计指标）。
 
 ## 架构设计
 
